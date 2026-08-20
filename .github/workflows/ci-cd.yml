@@ -114,7 +114,11 @@ jobs:
         run: kubectl argo rollouts abort bluegreen-demo -n dev
 
   deploy-test:
-    needs: deploy-dev
+    # needs BOTH: a job can only read another job's outputs.* if that job is
+    # listed here - listing only deploy-dev left needs.build-and-push.outputs.tag
+    # empty in this job, silently no-opping the image bump ("bump image to "
+    # with nothing after it) and leaving test on the old/placeholder tag.
+    needs: [deploy-dev, build-and-push]
     if: success()
     runs-on: [self-hosted, poc-cluster]
     env:
