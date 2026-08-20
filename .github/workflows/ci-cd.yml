@@ -91,11 +91,11 @@ jobs:
       # first revision ever, which Argo Rollouts auto-completes since
       # there's no previous stable version to diff against.
       - name: Wait for preview to be ready
-        run: ./ci/scripts/wait-for-phase.sh dev Paused,Healthy 180
+        run: bash ci/scripts/wait-for-phase.sh dev Paused,Healthy 180
 
       - id: smoke
         name: Smoke test dev preview
-        run: ./ci/scripts/smoke-test.sh /dev-bluegreen-preview "${TAG}"
+        run: bash ci/scripts/smoke-test.sh /dev-bluegreen-preview "${TAG}"
 
       - name: Promote dev (smoke test passed)
         if: success()
@@ -107,7 +107,7 @@ jobs:
           else
             echo "Rollout already at phase=${PHASE} (first revision auto-completes with nothing to promote) - skipping promote"
           fi
-          ./ci/scripts/wait-for-phase.sh dev Healthy 180
+          bash ci/scripts/wait-for-phase.sh dev Healthy 180
 
       - name: Abort dev (smoke test failed)
         if: failure() && steps.smoke.outcome == 'failure'
@@ -148,7 +148,7 @@ jobs:
             --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}" --timeout 180
 
       - name: Wait for test rollout to auto-promote (Healthy)
-        run: ./ci/scripts/wait-for-phase.sh test Healthy 180
+        run: bash ci/scripts/wait-for-phase.sh test Healthy 180
 
       - name: Smoke test test active
-        run: ./ci/scripts/smoke-test.sh /test-bluegreen "${TAG}"
+        run: bash ci/scripts/smoke-test.sh /test-bluegreen "${TAG}"
