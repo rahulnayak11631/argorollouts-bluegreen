@@ -76,8 +76,11 @@ jobs:
           argocd login "${{ secrets.ARGOCD_SERVER }}" --insecure --grpc-web --grpc-web-root-path argocd --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}"
           argocd app sync bluegreen-demo-dev --grpc-web --grpc-web-root-path argocd --timeout 180
 
-      - name: Wait for preview to be ready (Paused)
-        run: ./ci/scripts/wait-for-phase.sh dev Paused 180
+      # Paused = normal case (awaiting our promote). Healthy = the very
+      # first revision ever, which Argo Rollouts auto-completes since
+      # there's no previous stable version to diff against.
+      - name: Wait for preview to be ready
+        run: ./ci/scripts/wait-for-phase.sh dev Paused,Healthy 180
 
       - id: smoke
         name: Smoke test dev preview
@@ -86,7 +89,13 @@ jobs:
       - name: Promote dev (smoke test passed)
         if: success()
         run: |
-          kubectl argo rollouts promote bluegreen-demo -n dev
+          set -euo pipefail
+          PHASE=$(kubectl get rollout bluegreen-demo -n dev -o jsonpath='{.status.phase}')
+          if [ "$PHASE" == "Paused" ]; then
+            kubectl argo rollouts promote bluegreen-demo -n dev
+          else
+            echo "Rollout already at phase=${PHASE} (first revision auto-completes with nothing to promote) - skipping promote"
+          fi
           ./ci/scripts/wait-for-phase.sh dev Healthy 180
 
       - name: Abort dev (smoke test failed)
