@@ -29,22 +29,35 @@ spec:
               value: "true"
           resources:
             requests:
-              cpu: 50m
-              memory: 192Mi
+              cpu: 200m
+              memory: 256Mi
             limits:
-              cpu: 250m
-              memory: 384Mi
+              cpu: 750m
+              memory: 512Mi
+          # This cluster auto-injects an APM agent (Instana) into every pod,
+          # which adds ~45-50s of bytecode-instrumentation overhead to a cold
+          # JVM start - plain readiness/liveness with short initialDelaySeconds
+          # killed the container before it ever finished starting once
+          # (observed: Tomcat took ~44s to initialize, liveness probe's
+          # default initialDelaySeconds: 15 fired well before that and
+          # restarted it in a loop). A startupProbe defers readiness/liveness
+          # until the app answers once, however long that takes (up to
+          # 30 * 5s = 150s here), then normal probing takes over.
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 5
           readinessProbe:
             httpGet:
               path: /actuator/health
               port: 8080
-            initialDelaySeconds: 5
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 8080
-            initialDelaySeconds: 15
             periodSeconds: 10
   strategy:
     blueGreen:
