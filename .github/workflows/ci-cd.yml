@@ -11,6 +11,14 @@ on:
 permissions:
   contents: write   # the deploy jobs commit image-tag bumps back to k8s/overlays/*
 
+# A manual workflow_dispatch fired right after a push that also matches the
+# paths filter (e.g. editing this workflow file itself) starts two runs for
+# the same commit - both try to "git push" the same overlay bump and one
+# loses as a non-fast-forward. Queue same-ref runs instead of racing them.
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   IMAGE: rahulnayak11631/bluegreen-demo
 
@@ -59,6 +67,7 @@ jobs:
           git config user.email "ci-bot@users.noreply.github.com"
           git add k8s/overlays/dev
           git commit -m "deploy(dev): bump image to ${TAG}" || echo "nothing to commit"
+          git pull --rebase
           git push
 
       - name: ArgoCD sync (dev)
@@ -108,6 +117,7 @@ jobs:
           git config user.email "ci-bot@users.noreply.github.com"
           git add k8s/overlays/test
           git commit -m "deploy(test): bump image to ${TAG}" || echo "nothing to commit"
+          git pull --rebase
           git push
 
       - name: ArgoCD sync (test)
