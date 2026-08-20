@@ -1,0 +1,6 @@
+- op: replace
+  path: /spec/rules/0/http/paths/0/path
+  value: /dev-bluegreen(/|$)(.*)
+- op: replace
+  path: /spec/rules/0/http/paths/1/path
+  value: /dev-bluegreen-preview(/|$)(.*)

@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: bluegreen-demo
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: bluegreen-demo
+  template:
+    metadata:
+      labels:
+        app: bluegreen-demo
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        - name: app
+          image: rahulnayak11631/bluegreen-demo:placeholder
+          ports:
+            - containerPort: 8080
+          env:
+            - name: APP_VERSION
+              value: "placeholder"
+            - name: APP_COLOR
+              value: "blue"
+            - name: APP_HEALTHY
+              value: "true"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              cpu: 250m
+              memory: 384Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+  strategy:
+    blueGreen:
+      activeService: bluegreen-demo-active
+      previewService: bluegreen-demo-preview
+      autoPromotionEnabled: false
+      scaleDownDelaySeconds: 30

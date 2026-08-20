@@ -1,0 +1,9 @@
+- op: replace
+  path: /spec/template/spec/containers/0/env/0/value
+  value: "v1"
+- op: replace
+  path: /spec/template/spec/containers/0/env/1/value
+  value: "green"
+- op: replace
+  path: /spec/strategy/blueGreen/autoPromotionEnabled
+  value: true

@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bluegreen-demo
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - ai-poc-ingress
+      secretName: ingress-tls
+  rules:
+    - host: ai-poc-ingress
+      http:
+        paths:
+          # overlay patches replace these two paths with /dev-bluegreen* or /test-bluegreen*
+          - path: /PLACEHOLDER-active(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: bluegreen-demo-active
+                port:
+                  number: 80
+          - path: /PLACEHOLDER-preview(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: bluegreen-demo-preview
+                port:
+                  number: 80

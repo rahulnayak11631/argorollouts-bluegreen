@@ -1,0 +1,91 @@
+# Scoped identity for the GitHub Actions self-hosted runner (worker-02).
+# Deliberately NOT admin.conf - limited to what the pipeline actually needs
+# in the dev/test namespaces: read/patch Rollouts (for promote/abort) and
+# read the workload objects it deploys.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-cd
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-deployer
+  namespace: ci-cd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-deployer
+  namespace: dev
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["rollouts", "rollouts/status", "rollouts/scale", "analysisruns"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["services", "pods", "pods/log", "endpoints", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-deployer
+  namespace: test
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["rollouts", "rollouts/status", "rollouts/scale", "analysisruns"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["services", "pods", "pods/log", "endpoints", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-deployer
+  namespace: dev
+subjects:
+  - kind: ServiceAccount
+    name: ci-deployer
+    namespace: ci-cd
+roleRef:
+  kind: Role
+  name: ci-deployer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-deployer
+  namespace: test
+subjects:
+  - kind: ServiceAccount
+    name: ci-deployer
+    namespace: ci-cd
+roleRef:
+  kind: Role
+  name: ci-deployer
+  apiGroup: rbac.authorization.k8s.io
+---
+# Long-lived token Secret for the ServiceAccount (k8s 1.24+ no longer auto-creates
+# these) - used to build the kubeconfig the self-hosted runner uses.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ci-deployer-token
+  namespace: ci-cd
+  annotations:
+    kubernetes.io/service-account.name: ci-deployer
+type: kubernetes.io/service-account-token

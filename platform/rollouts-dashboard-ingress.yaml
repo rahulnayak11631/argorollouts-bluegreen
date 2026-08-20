@@ -1,0 +1,36 @@
+# Applied manually with kubectl. Requires the argo-rollouts Helm release
+# installed with --set dashboard.enabled=true (Service "argo-rollouts-dashboard"
+# on port 3100).
+#
+# NOTE: the dashboard binary hardcodes its own base path to "/rollouts/"
+# internally (root "/" 302-redirects there, and all its static assets are
+# referenced as absolute "/rollouts/..." paths) - it has no equivalent of
+# ArgoCD's --rootpath flag. So the ingress path here MUST be exactly
+# "/rollouts" with no rewrite-target, matching what the app already expects,
+# rather than picking our own path like the other apps on this ingress do.
+# Confirmed via `kubectl port-forward svc/argo-rollouts-dashboard 3100`:
+# GET / -> 302 Location: /rollouts/, and /rollouts/... -> 200.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argo-rollouts-dashboard
+  namespace: argo-rollouts
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - ai-poc-ingress
+      secretName: ingress-tls
+  rules:
+    - host: ai-poc-ingress
+      http:
+        paths:
+          - path: /rollouts
+            pathType: Prefix
+            backend:
+              service:
+                name: argo-rollouts-dashboard
+                port:
+                  number: 3100
