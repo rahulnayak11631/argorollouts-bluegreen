@@ -237,4 +237,39 @@ without needing a hop through master.
 
 ## 7. First run + verification
 
-*(next: trigger the pipeline, watch it build/push/deploy/gate/promote for real)*
+Triggered manually the first time (`gh workflow run ci-cd.yml --repo ... --ref main`)
+since the very first push only touched docs/platform files, not `app/**`.
+Hit three bugs, fixed in order:
+
+1. **`ArgoCD sync (dev)` failed**: `error dial proxy: ... too many colons in
+   address`. Cause: `ARGOCD_SERVER` secret was set to the full URL
+   `https://ai-poc-ingress:31083/argocd`, but `argocd login <server>` wants
+   bare `host:port`. Fix: secret → `ai-poc-ingress:31083`, and every
+   `argocd` CLI call (login *and* `app sync`) needs **both**
+   `--grpc-web --grpc-web-root-path argocd` to reach the path-mounted
+   server - not just at login time.
+2. Pushing that workflow fix (it touches `.github/workflows/ci-cd.yml`,
+   which is in the `paths:` filter) auto-triggered a `push`-event run,
+   which then raced against a leftover manual `workflow_dispatch` run I'd
+   also queued - both tried to commit+push the same overlay bump and one
+   lost as a non-fast-forward `git push`. Fixed with a `concurrency: {group:
+   ci-cd-${{ github.ref }}}` block (queues same-ref runs instead of racing)
+   plus `git pull --rebase` right before every `git push` in the pipeline,
+   belt-and-suspenders.
+3. After those fixes, a single clean `push`-triggered run: `build-and-push`
+   → `deploy-dev` (bump, commit, ArgoCD sync, wait for `Paused`, smoke-test
+   the preview, promote, wait for `Healthy`) → `deploy-test` (same, but
+   auto-promotes) all went green. `dev`/`test` pods that had been sitting in
+   `ErrImagePull` (from the placeholder `:v1` tag with nothing pushed yet)
+   resolved automatically once the real image landed.
+
+**Verify**:
+```bash
+kubectl get rollout -n dev -n test          # both Healthy
+curl -sk --resolve ai-poc-ingress:31083:127.0.0.1 https://ai-poc-ingress:31083/dev-bluegreen/version
+curl -sk --resolve ai-poc-ingress:31083:127.0.0.1 https://ai-poc-ingress:31083/test-bluegreen/version
+kubectl argo rollouts get rollout bluegreen-demo -n dev   # blue/green ReplicaSet diagram
+```
+From your own machine (not a cluster node), add `34.204.251.107 ai-poc-ingress`
+to your hosts file first, then hit the same URLs with a normal browser/curl
+(no `--resolve` needed once the hosts entry exists).
