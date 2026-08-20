@@ -6,7 +6,7 @@ resources:
 images:
 - name: rahulnayak11631/bluegreen-demo
   newName: rahulnayak11631/bluegreen-demo
-  newTag: 9b4fdda
+  newTag: 28ea61b
 patches:
 - path: patch-ingress.yaml
   target:
