@@ -70,11 +70,22 @@ jobs:
           git pull --rebase
           git push
 
+      # Talks to argocd-server's in-cluster ClusterIP directly (not through
+      # the public ingress/NodePort). The runner is a plain host process on
+      # worker-02, not a pod, so it can't use cluster DNS - the ClusterIP
+      # itself is still reachable from any node via kube-proxy, and it's
+      # both far more reliable and much faster than the ingress hairpin
+      # path (which intermittently failed with connection timeout/EOF under
+      # this same loopback-NodePort route - see docs/IMPLEMENTATION-STEPS.md).
+      # `--auth-token` also goes directly on the command, not via `argocd
+      # login` first - `login` doesn't accept --auth-token and silently
+      # falls back to an interactive username/password prompt instead.
       - name: ArgoCD sync (dev)
         run: |
           set -euo pipefail
-          argocd login "${{ secrets.ARGOCD_SERVER }}" --insecure --grpc-web --grpc-web-root-path argocd --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}"
-          argocd app sync bluegreen-demo-dev --grpc-web --grpc-web-root-path argocd --timeout 180
+          argocd app sync bluegreen-demo-dev \
+            --server "${{ secrets.ARGOCD_SERVER }}" --plaintext --grpc-web --grpc-web-root-path argocd \
+            --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}" --timeout 180
 
       # Paused = normal case (awaiting our promote). Healthy = the very
       # first revision ever, which Argo Rollouts auto-completes since
@@ -132,8 +143,9 @@ jobs:
       - name: ArgoCD sync (test)
         run: |
           set -euo pipefail
-          argocd login "${{ secrets.ARGOCD_SERVER }}" --insecure --grpc-web --grpc-web-root-path argocd --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}"
-          argocd app sync bluegreen-demo-test --grpc-web --grpc-web-root-path argocd --timeout 180
+          argocd app sync bluegreen-demo-test \
+            --server "${{ secrets.ARGOCD_SERVER }}" --plaintext --grpc-web --grpc-web-root-path argocd \
+            --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}" --timeout 180
 
       - name: Wait for test rollout to auto-promote (Healthy)
         run: ./ci/scripts/wait-for-phase.sh test Healthy 180
