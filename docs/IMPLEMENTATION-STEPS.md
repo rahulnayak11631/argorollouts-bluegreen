@@ -169,14 +169,72 @@ for any future in-cluster UI behind this shared ingress: **port-forward
 straight to the Service first** and see what path/behavior it wants before
 guessing at ingress annotations.
 
-## 5. Push manifests, apply RBAC + ArgoCD Applications
+## 5. Push manifests, apply RBAC + ArgoCD Applications (done)
 
-*(pending)*
+Repo pushed from the local machine (private repo, PAT used only for the
+push, then scrubbed from `git remote -v`; added `.gitattributes` first so
+the shell scripts survive as LF even though authored on Windows):
+```bash
+git init -b main
+git add -A && git commit -m "..."
+git remote add origin https://<PAT>@github.com/rahulnayak11631/argorollouts-bluegreen.git
+git push -u origin main
+git remote set-url origin https://github.com/rahulnayak11631/argorollouts-bluegreen.git
+```
 
-## 6. Self-hosted GitHub Actions runner on worker-02
+ArgoCD needs its own credential for the now-private repo (separate from the
+GitHub Actions side):
+```bash
+argocd repo add https://github.com/rahulnayak11631/argorollouts-bluegreen.git \
+  --username rahulnayak11631 --password "$(gh auth token)" \
+  --grpc-web --grpc-web-root-path argocd
+```
 
-*(pending)*
+Then applied `ci/rbac.yaml` (creates the `ci-cd` namespace + `ci-deployer`
+ServiceAccount + scoped Roles/RoleBindings in `dev`/`test` + its token
+Secret) and both `argocd/application-*.yaml` directly with `kubectl apply`
+(simplest for a POC - these two Application objects aren't themselves
+GitOps-managed).
+
+First sync (`argocd app sync bluegreen-demo-dev` / `-test`) created the
+Rollouts/Services/Ingress correctly. Pods sit in `ErrImagePull` at this
+point - expected, `rahulnayak11631/bluegreen-demo:v1` doesn't exist on
+Docker Hub yet (that's the placeholder tag in the base kustomization; the
+pipeline's first real run overwrites it with a real git-SHA tag it just
+pushed).
+
+## 6. Self-hosted GitHub Actions runner on worker-02 (done)
+
+Built a scoped kubeconfig from the `ci-deployer` ServiceAccount (RBAC
+verified: can list Rollouts in `dev`/`test`, forbidden everywhere else,
+e.g. `loanengine`) and copied it to `~/.kube/ci-deployer.config` on
+worker-02 - this is the `KUBECONFIG` the workflow's `deploy-dev`/`deploy-test`
+jobs use:
+```bash
+SERVER=$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.server}')
+CA_DATA=$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+TOKEN=$(kubectl get secret ci-deployer-token -n ci-cd -o jsonpath='{.data.token}' | base64 -d)
+# ... assembled into a kubeconfig, scp'd to worker-02:~/.kube/ci-deployer.config
+```
+
+Installed on worker-02: `gh`, `kustomize` (standalone binary - `kubectl
+kustomize` alone doesn't have `edit`), `yq` (mikefarah/yq), `kubectl-argo-rollouts`,
+`argocd` CLI. (`kubectl`, `git`, `python3`, `jq` were already present.)
+
+Registered + installed the runner as a systemd service:
+```bash
+REG_TOKEN=$(gh api -X POST repos/rahulnayak11631/argorollouts-bluegreen/actions/runners/registration-token --jq .token)
+./config.sh --url https://github.com/rahulnayak11631/argorollouts-bluegreen \
+  --token "$REG_TOKEN" --name worker-02-poc --labels poc-cluster --work _work --unattended
+sudo ./svc.sh install ec2-user && sudo ./svc.sh start
+```
+Matches the workflow's `runs-on: [self-hosted, poc-cluster]`.
+
+**Note on `worker-02`'s Elastic IP doubling as SSH access**: the same
+Elastic IP (`34.204.251.107`) that fronts the ingress NodePort also answers
+SSH on port 22 straight to worker-02 - that's how tools got installed there
+without needing a hop through master.
 
 ## 7. First run + verification
 
-*(pending)*
+*(next: trigger the pipeline, watch it build/push/deploy/gate/promote for real)*
