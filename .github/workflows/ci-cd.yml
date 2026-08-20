@@ -64,8 +64,8 @@ jobs:
       - name: ArgoCD sync (dev)
         run: |
           set -euo pipefail
-          argocd login "${{ secrets.ARGOCD_SERVER }}" --grpc-web --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}"
-          argocd app sync bluegreen-demo-dev --timeout 180
+          argocd login "${{ secrets.ARGOCD_SERVER }}" --insecure --grpc-web --grpc-web-root-path argocd --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}"
+          argocd app sync bluegreen-demo-dev --grpc-web --grpc-web-root-path argocd --timeout 180
 
       - name: Wait for preview to be ready (Paused)
         run: ./ci/scripts/wait-for-phase.sh dev Paused 180
@@ -113,8 +113,8 @@ jobs:
       - name: ArgoCD sync (test)
         run: |
           set -euo pipefail
-          argocd login "${{ secrets.ARGOCD_SERVER }}" --grpc-web --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}"
-          argocd app sync bluegreen-demo-test --timeout 180
+          argocd login "${{ secrets.ARGOCD_SERVER }}" --insecure --grpc-web --grpc-web-root-path argocd --auth-token "${{ secrets.ARGOCD_AUTH_TOKEN }}"
+          argocd app sync bluegreen-demo-test --grpc-web --grpc-web-root-path argocd --timeout 180
 
       - name: Wait for test rollout to auto-promote (Healthy)
         run: ./ci/scripts/wait-for-phase.sh test Healthy 180
