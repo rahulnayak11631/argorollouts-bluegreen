@@ -273,3 +273,73 @@ kubectl argo rollouts get rollout bluegreen-demo -n dev   # blue/green ReplicaSe
 From your own machine (not a cluster node), add `34.204.251.107 ai-poc-ingress`
 to your hosts file first, then hit the same URLs with a normal browser/curl
 (no `--resolve` needed once the hosts entry exists).
+
+### More bugs found chasing the first fully-green run
+
+The single-run walkthrough above undersells it - getting one clean run
+took **6 iterations**, each exposing a real, distinct bug:
+
+4. **`ArgoCD sync (dev)` intermittently failed** with `connection timed out`
+   then, on retry, `EOF` - going through the public ingress
+   (`ai-poc-ingress:31083`) from worker-02's own loopback was flaky under
+   the grpc-web streaming calls `argocd app sync` makes (same family of
+   issue as gotcha #1, worse here). **Fix**: talk to `argocd-server`'s
+   in-cluster **ClusterIP** directly (`10.110.112.200:80`, `--plaintext`
+   instead of `--insecure` since there's no TLS to skip - it's plain HTTP
+   inside the cluster) - instant and 100% reliable in testing (2-9ms per
+   call vs. the ingress path's timeouts). The runner is a plain host
+   process on worker-02, not a pod, so it can't resolve cluster DNS names
+   like `argocd-server.argocd.svc.cluster.local` - but the ClusterIP itself
+   is still directly routable from any node via kube-proxy, no DNS needed.
+   Known tradeoff: a hardcoded ClusterIP breaks if the Service is ever
+   deleted/recreated (Helm upgrades in place keep it stable).
+5. **`argocd login ... --auth-token X` silently prompted for a username**
+   and hit EOF on the runner's empty stdin. Turns out `login` doesn't accept
+   `--auth-token` at all - that flag belongs on the actual commands
+   (`app sync --auth-token X`), not on `login`. Fix: drop the separate
+   login step entirely, pass `--server`/`--plaintext`/`--grpc-web`/
+   `--grpc-web-root-path`/`--auth-token` straight on `argocd app sync`.
+6. **`wait-for-phase.sh: Permission denied`** - the shell scripts were
+   authored on Windows (this machine) where NTFS has no executable-bit
+   concept, so git committed them as mode `100644`. Fixed two ways:
+   `git update-index --chmod=+x` on the committed blobs, *and* changed the
+   workflow to invoke them as `bash ci/scripts/foo.sh` so it doesn't depend
+   on the bit at all.
+7. **`deploy-test` bumped the tag to nothing** (`deploy(test): bump image
+   to` with nothing after it) - its `needs: deploy-dev` didn't also list
+   `build-and-push`, so `needs.build-and-push.outputs.tag` was empty inside
+   that job (a job can only read another job's `outputs` if it's listed in
+   its own `needs:`). `kustomize edit set image foo=foo:` with an empty tag
+   silently drops `newTag` entirely, leaving the image reference untagged
+   (implicit `:latest`, which was never pushed) - that's what the
+   `ImagePullBackOff`/`:placeholder` confusion earlier turned out to be.
+   Fix: `needs: [deploy-dev, build-and-push]`.
+
+### First fully green run
+
+`build-and-push` → `deploy-dev` (sync via ClusterIP, `Paused`, smoke-test
+preview, promote, `Healthy`) → `deploy-test` (sync, auto-promote to
+`Healthy`, smoke-test active) all succeeded. Confirmed both namespaces
+serving the right build and nothing stale left running:
+```
+curl .../dev-bluegreen/version   -> {"version":"2cac0f6","color":"blue", ...}
+curl .../test-bluegreen/version -> {"version":"2cac0f6","color":"green", ...}
+kubectl get rollout -n dev / -n test   -> both single ReplicaSet, 2/2, Healthy
+```
+Older ReplicaSets are kept `ScaledDown` (not deleted) up to
+`revisionHistoryLimit: 3` - visible in `kubectl argo rollouts get rollout`,
+useful for `kubectl argo rollouts undo` if you ever need a fast rollback.
+
+### Try it yourself
+
+- **Happy path**: edit `app/.../VersionController.java` (or bump
+  `pom.xml`'s version, anything under `app/**`), push to `main`, watch
+  `gh run watch --repo rahulnayak11631/argorollouts-bluegreen` - dev gets a
+  new preview, gets smoke-tested, promotes, then test follows.
+- **Negative path**: patch `k8s/overlays/dev/patch-rollout.yaml` to set
+  `APP_HEALTHY` to `"false"` (add a JSON-patch op for
+  `/spec/template/spec/containers/0/env/2/value`) and push under `app/**` in
+  the same commit (or just `workflow_dispatch` after) - the preview pod
+  will fail its readiness probe, the smoke test's `/actuator/health` check
+  fails, and `kubectl argo rollouts abort` fires automatically; `test`
+  never runs. Revert the patch afterward.
