@@ -1,6 +1,6 @@
 - op: replace
   path: /spec/template/spec/containers/0/env/0/value
-  value: "2cac0f6"
+  value: "c139adc"
 - op: replace
   path: /spec/template/spec/containers/0/env/1/value
   value: "green"
