@@ -6,4 +6,10 @@
   value: "green"
 - op: replace
   path: /spec/strategy/blueGreen/autoPromotionEnabled
-  value: true
+  value: false
+  # Flipped from true: the new Jenkins pipeline deploys straight to test
+  # with its own manual-approval gate, which only means anything if the
+  # Rollout itself waits for an explicit promote. Known consequence: the
+  # two GitHub Actions pipelines' deploy-test jobs don't call promote for
+  # test (they never had to before) - their next run against test will sit
+  # at Paused and time out waiting for Healthy until they're updated too.
