@@ -30,12 +30,19 @@ RETRY_DELAY=3
 
 echo "Smoke testing ${BASE} (expecting version=${EXPECTED_VERSION})"
 
+# Unique per-invocation temp file, not a fixed /tmp path: this box runs the
+# GitHub Actions runner as ec2-user AND Jenkins as the jenkins user, and a
+# shared hardcoded path left over from one owner's run made curl fail with
+# exit 23 ("failed writing output") for the other.
+HEALTH_FILE=$(mktemp)
+trap 'rm -f "$HEALTH_FILE"' EXIT
+
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
-  HEALTH_CODE=$(curl -sk --resolve "${HOST}:${PORT}:127.0.0.1" -o /tmp/health.json -w '%{http_code}' "${BASE}/actuator/health")
+  HEALTH_CODE=$(curl -sk --resolve "${HOST}:${PORT}:127.0.0.1" -o "$HEALTH_FILE" -w '%{http_code}' "${BASE}/actuator/health")
 
   if [ "$HEALTH_CODE" != "200" ]; then
     echo "[attempt ${attempt}/${MAX_ATTEMPTS}] FAIL: /actuator/health returned HTTP ${HEALTH_CODE}"
-    cat /tmp/health.json
+    cat "$HEALTH_FILE"
     sleep "$RETRY_DELAY"
     continue
   fi
