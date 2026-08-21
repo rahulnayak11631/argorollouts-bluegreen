@@ -21,7 +21,12 @@ node {
     }
 
     stage('Build') {
+        // mvn on this box defaults to JDK 17 regardless of the "java"
+        // alternative being JDK 21 - pom.xml targets 21, so pin JAVA_HOME
+        // explicitly rather than relying on whatever mvn picks by default.
         sh '''
+            export JAVA_HOME=/usr/lib/jvm/java-21
+            export PATH="$JAVA_HOME/bin:$PATH"
             cd app
             mvn -f pom.xml clean package -DskipTests
         '''
